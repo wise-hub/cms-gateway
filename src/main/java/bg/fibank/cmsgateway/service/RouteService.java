@@ -2,32 +2,41 @@ package bg.fibank.cmsgateway.service;
 
 import bg.fibank.cmsgateway.model.Route;
 import bg.fibank.cmsgateway.repository.RouteRepository;
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.cloud.gateway.route.RouteDefinition;
 import org.springframework.cloud.gateway.route.RouteDefinitionLocator;
+import org.springframework.cloud.gateway.handler.predicate.PredicateDefinition;
+import org.springframework.cloud.gateway.filter.FilterDefinition;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 
 import java.net.URI;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 @Service
 public class RouteService implements RouteDefinitionLocator {
 
     private final RouteRepository routeRepository;
-    private final ObjectMapper objectMapper;
 
-    public RouteService(RouteRepository routeRepository, ObjectMapper objectMapper) {
+    public RouteService(RouteRepository routeRepository) {
         this.routeRepository = routeRepository;
-        this.objectMapper = objectMapper;
     }
 
     @Override
     public Flux<RouteDefinition> getRouteDefinitions() {
         return Flux.defer(() -> {
-            List<Route> routeModels = routeRepository.findAllRoutes();
-            return Flux.fromIterable(routeModels.stream().map(this::convertToRouteDefinition).toList());
+            List<Route> routes = routeRepository.findAllRoutes();
+            List<RouteDefinition> routeDefinitions = new ArrayList<>();
+            for (Route route : routes) {
+                RouteDefinition routeDefinition = new RouteDefinition();
+                routeDefinition.setId(route.getId());
+                routeDefinition.setUri(URI.create(route.getUri()));
+                routeDefinition.setPredicates(List.of(new PredicateDefinition("Path=" + route.getPredicates())));
+                routeDefinition.setFilters(parseFilters(route.getFilters()));
+                routeDefinitions.add(routeDefinition);
+            }
+            return Flux.fromIterable(routeDefinitions);
         });
     }
 
@@ -35,20 +44,25 @@ public class RouteService implements RouteDefinitionLocator {
         return routeRepository.findAllRoutes();
     }
 
-    private RouteDefinition convertToRouteDefinition(Route model) {
-        try {
-            return buildRouteDefinition(model);
-        } catch (Exception e) {
-            throw new IllegalArgumentException("Invalid route data: " + model, e);
-        }
-    }
+    private List<FilterDefinition> parseFilters(String filters) {
+        List<FilterDefinition> filterDefinitions = new ArrayList<>();
+        if (filters == null || filters.isEmpty()) return filterDefinitions;
 
-    private RouteDefinition buildRouteDefinition(Route model) throws Exception {
-        RouteDefinition routeDefinition = new RouteDefinition();
-        routeDefinition.setId(model.getId());
-        routeDefinition.setUri(URI.create(model.getUri()));
-        routeDefinition.setPredicates(objectMapper.readValue(model.getPredicates(), new TypeReference<>() {}));
-        routeDefinition.setFilters(objectMapper.readValue(model.getFilters(), new TypeReference<>() {}));
-        return routeDefinition;
+        for (String filter : filters.split(";")) {
+            String[] parts = filter.split(":", 2);
+            FilterDefinition filterDefinition = new FilterDefinition();
+            filterDefinition.setName(parts[0]);
+            if (parts.length > 1) {
+                String[] args = parts[1].split("->", 2);
+                if (args.length == 1) {
+                    filterDefinition.addArg("value", args[0]);
+                } else {
+                    filterDefinition.addArg("regexp", args[0]);
+                    filterDefinition.addArg("replacement", args[1]);
+                }
+            }
+            filterDefinitions.add(filterDefinition);
+        }
+        return filterDefinitions;
     }
 }

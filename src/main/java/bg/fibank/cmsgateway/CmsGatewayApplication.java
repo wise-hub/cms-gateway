@@ -1,7 +1,10 @@
 package bg.fibank.cmsgateway;
 
+import jakarta.annotation.PostConstruct;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+
+import java.security.Security;
 
 @SpringBootApplication
 public class CmsGatewayApplication {
@@ -11,5 +14,11 @@ public class CmsGatewayApplication {
 		System.out.println("Java Home: " + System.getProperty("java.home"));
 
 		SpringApplication.run(CmsGatewayApplication.class, args);
+	}
+
+	@PostConstruct
+	public void configureDnsCache() {
+		Security.setProperty("networkaddress.cache.ttl", "3600");
+		Security.setProperty("networkaddress.cache.negative.ttl", "10");
 	}
 }
